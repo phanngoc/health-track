@@ -659,10 +659,21 @@ class RuleEngineService
 
     private function generateMedicationSideEffectMessage(User $user, array $condition): string
     {
-        $medicationName = $condition['medication'] ?? 'thuốc';
-        $sideEffect = $condition['side_effect'] ?? 'tác dụng phụ';
+        $medicationType = $condition['medication_type'] ?? 'thuốc';
+        $sideEffectSymptom = $condition['side_effect_symptom'] ?? null;
+        $sideEffectName = $sideEffectSymptom ? $this->getSymptomDisplayName($sideEffectSymptom) : 'tác dụng phụ';
 
-        return "Bạn có thể đang gặp tác dụng phụ từ {$medicationName}: {$sideEffect}. Hãy liên hệ bác sĩ nếu tình trạng này kéo dài hoặc trở nên nghiêm trọng.";
+        // Map medication types to Vietnamese names
+        $medicationNames = [
+            'antibiotic' => 'kháng sinh',
+            'antihistamine' => 'kháng histamine',
+            'painkiller' => 'thuốc giảm đau',
+            'steroid' => 'corticoid',
+        ];
+
+        $medicationName = $medicationNames[$medicationType] ?? $medicationType;
+
+        return "Bạn có thể đang gặp tác dụng phụ từ thuốc {$medicationName}: {$sideEffectName}. Hãy liên hệ bác sĩ nếu tình trạng này kéo dài hoặc trở nên nghiêm trọng.";
     }
 
     private function generateTreatmentNoImprovementMessage(User $user, array $condition): string
