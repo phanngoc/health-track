@@ -1,0 +1,26 @@
+<?php
+
+namespace Database\Factories;
+
+use Illuminate\Database\Eloquent\Factories\Factory;
+
+/**
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Symptom>
+ */
+class SymptomFactory extends Factory
+{
+    /**
+     * Define the model's default state.
+     *
+     * @return array<string, mixed>
+     */
+    public function definition(): array
+    {
+        return [
+            'code' => fake()->unique()->word(),
+            'display_name' => fake()->words(2, true),
+            'severity_scale' => 10,
+            'is_critical' => false,
+        ];
+    }
+}

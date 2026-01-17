@@ -54,7 +54,11 @@
                         </div>
                     @endif
                     
-                    <p class="text-gray-600 text-sm">{{ $insight['insight'] }}</p>
+                    @if(isset($headerInsight))
+                        <p class="text-gray-600 text-sm">{{ $headerInsight['message'] }}</p>
+                    @else
+                        <p class="text-gray-600 text-sm">{{ $insight['insight'] }}</p>
+                    @endif
                 </div>
             </div>
         </div>
@@ -180,6 +184,16 @@
                                                 @if($event['data']->sleep_hours)
                                                     • Ngủ: {{ $event['data']->sleep_hours }}h
                                                 @endif
+                                            </div>
+                                        @endif
+
+                                        @if($event['type'] === 'insight')
+                                            <div class="mt-3">
+                                                <a href="{{ route('insights.explain', $event['data']->id) }}" 
+                                                   class="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition">
+                                                    <span>Vì sao tôi thấy insight này?</span>
+                                                    <span>→</span>
+                                                </a>
                                             </div>
                                         @endif
                                     </div>

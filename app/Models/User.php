@@ -98,4 +98,44 @@ class User extends Authenticatable
     {
         return $this->hasMany(TimelineEvent::class);
     }
+
+    /**
+     * Get the insights for the user.
+     */
+    public function insights(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(Insight::class);
+    }
+
+    /**
+     * Check if user has pregnancy condition.
+     */
+    public function isPregnant(): bool
+    {
+        $conditions = $this->conditions ?? [];
+
+        return in_array('pregnancy', $conditions) || in_array('pregnant', $conditions);
+    }
+
+    /**
+     * Get user's disease type (AR, AD, or null).
+     */
+    public function getDiseaseType(): ?string
+    {
+        $conditions = $this->conditions ?? [];
+
+        if (in_array('allergic_rhinitis', $conditions) || in_array('AR', $conditions)) {
+            return 'AR';
+        }
+
+        if (in_array('atopic_dermatitis', $conditions) || in_array('AD', $conditions)) {
+            return 'AD';
+        }
+
+        if ($this->isPregnant()) {
+            return 'PR';
+        }
+
+        return null;
+    }
 }

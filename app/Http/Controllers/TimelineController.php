@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Alert;
 use App\Models\DailyCheckin;
+use App\Models\Insight;
 use App\Models\SymptomLog;
 use App\Services\InsightService;
 use Carbon\Carbon;
@@ -14,15 +15,50 @@ class TimelineController extends Controller
 {
     public function __construct(
         private InsightService $insightService
-    ) {
-    }
+    ) {}
 
     public function index(Request $request): View
     {
         $user = $request->user();
 
-        // Layer 1: Health Status Header
-        $insight = $this->insightService->generateInsight($user);
+        // Layer 1: Health Status Header (use new generateInsights, fallback to old method)
+        $newInsights = $this->insightService->generateInsights($user);
+        $oldInsight = $this->insightService->generateInsight($user);
+
+        // Save insights to database
+        foreach ($newInsights as $insightData) {
+            Insight::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'code' => $insightData['code'],
+                    'generated_at' => Carbon::today(),
+                ],
+                [
+                    'type' => $insightData['type'],
+                    'message' => $insightData['message'],
+                    'priority' => $insightData['priority'],
+                    'metadata' => $insightData['metadata'] ?? [],
+                    'explanation_data' => $insightData['explanation_data'] ?? [],
+                    'expires_at' => Carbon::today()->addDays(1),
+                ]
+            );
+        }
+
+        // Get primary insight for header (prefer TREND or REASSURANCE, max 1 sentence)
+        $headerInsight = null;
+        if (! empty($newInsights)) {
+            // Find TREND or REASSURANCE insight
+            foreach ($newInsights as $insight) {
+                if (in_array($insight['type'], ['TREND', 'REASSURANCE'])) {
+                    $headerInsight = $insight;
+                    break;
+                }
+            }
+            // If no TREND/REASSURANCE, use first insight
+            if (! $headerInsight) {
+                $headerInsight = $newInsights[0];
+            }
+        }
 
         // Layer 2: Visual Trend Strip (7 days)
         $trendStrip = $this->getTrendStrip($user);
@@ -30,8 +66,14 @@ class TimelineController extends Controller
         // Layer 3: Event Timeline (last 7 days, meaningful events only)
         $events = $this->getMeaningfulEvents($user);
 
+        // Add insights to timeline events
+        $insightEvents = $this->getInsightEvents($user);
+        $events = $this->mergeInsightsIntoEvents($events, $insightEvents);
+
         return view('timeline.index', [
-            'insight' => $insight,
+            'insight' => $oldInsight, // Keep for backward compatibility
+            'insights' => $newInsights, // New insights array
+            'headerInsight' => $headerInsight, // Primary insight for header
             'trendStrip' => $trendStrip,
             'events' => $events,
             'insightService' => $this->insightService,
@@ -245,5 +287,78 @@ class TimelineController extends Controller
             'watch' => 'yellow',
             default => 'blue',
         };
+    }
+
+    /**
+     * Get insight events for timeline.
+     */
+    private function getInsightEvents($user): array
+    {
+        $startDate = Carbon::today()->subDays(7);
+        $insights = Insight::where('user_id', $user->id)
+            ->where('generated_at', '>=', $startDate)
+            ->orderBy('generated_at', 'desc')
+            ->get();
+
+        $events = [];
+        foreach ($insights as $insight) {
+            $priorityColors = [
+                'high' => 'red',
+                'medium' => 'orange',
+                'low' => 'blue',
+            ];
+
+            $events[] = [
+                'type' => 'insight',
+                'date' => $insight->generated_at->format('Y-m-d'),
+                'time' => $insight->generated_at,
+                'icon' => '🧠',
+                'color' => $priorityColors[$insight->priority] ?? 'blue',
+                'title' => 'Insight: '.$insight->type,
+                'message' => $insight->message,
+                'data' => $insight,
+            ];
+        }
+
+        return $events;
+    }
+
+    /**
+     * Merge insights into events timeline.
+     */
+    private function mergeInsightsIntoEvents(array $events, array $insightEvents): array
+    {
+        // Flatten grouped events first
+        $flatEvents = [];
+        foreach ($events as $dayGroup) {
+            foreach ($dayGroup['items'] as $event) {
+                $flatEvents[] = $event;
+            }
+        }
+
+        // Combine all events
+        $allEvents = array_merge($flatEvents, $insightEvents);
+
+        // Re-sort by time
+        usort($allEvents, function ($a, $b) {
+            $timeA = $a['time'] ?? Carbon::parse($a['date'] ?? now());
+            $timeB = $b['time'] ?? Carbon::parse($b['date'] ?? now());
+
+            if ($timeA instanceof Carbon && $timeB instanceof Carbon) {
+                return $timeB->timestamp <=> $timeA->timestamp;
+            }
+
+            return 0;
+        });
+
+        // Re-group by date
+        $grouped = collect($allEvents)->groupBy('date')->map(function ($items, $date) {
+            return [
+                'date' => Carbon::parse($date),
+                'items' => $items->values()->all(),
+            ];
+        })->sortKeysDesc();
+
+        return $grouped->values()->all();
     }
 }

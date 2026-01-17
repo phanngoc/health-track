@@ -25,4 +25,7 @@ Route::middleware('auth')->group(function () {
 
     // Timeline route
     Route::get('/timeline', [\App\Http\Controllers\TimelineController::class, 'index'])->name('timeline.index');
+
+    // Insight routes
+    Route::get('/insights/{insight}/explain', [\App\Http\Controllers\InsightController::class, 'explain'])->name('insights.explain');
 });
