@@ -5,11 +5,13 @@ namespace App\Services;
 use App\Models\DailyCheckin;
 use App\Models\HealthEvent;
 use App\Models\Insight;
+use App\Models\MomentCheckin;
 use App\Models\Symptom;
 use App\Models\SymptomLog;
 use App\Models\User;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class CheckInService
 {
@@ -20,11 +22,11 @@ class CheckInService
     ) {}
 
     /**
-     * Process a daily check-in for a user.
+     * Process a daily check-in for a user (baseline well-being, 1 per day).
      *
      * @param  array<string, mixed>  $data
      */
-    public function processCheckIn(User $user, array $data): DailyCheckin
+    public function processDailyCheckIn(User $user, array $data): DailyCheckin
     {
         return DB::transaction(function () use ($user, $data) {
             $checkinDate = isset($data['checkin_date'])
@@ -44,18 +46,20 @@ class CheckInService
                 $overallFeeling = $moodMap[$data['mood']] ?? null;
             }
 
-            // Luôn tạo DailyCheckin mới (không merge/update)
-            // DailyCheckin chỉ là metadata để hiển thị timeline
-            // Data chính là SymptomLog
-            $checkin = DailyCheckin::create([
-                'user_id' => $user->id,
-                'checkin_date' => $checkinDate,
-                'mood' => $data['mood'] ?? null,
-                'tags' => $data['tags'] ?? null,
-                'overall_feeling' => $overallFeeling,
-                'sleep_hours' => $data['sleep_hours'] ?? null,
-                'notes' => $data['notes'] ?? null,
-            ]);
+            // Use updateOrCreate to enforce unique constraint (1 per day)
+            $checkin = DailyCheckin::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'checkin_date' => $checkinDate,
+                ],
+                [
+                    'mood' => $data['mood'] ?? null,
+                    'tags' => $data['tags'] ?? null,
+                    'overall_feeling' => $overallFeeling,
+                    'sleep_hours' => $data['sleep_hours'] ?? null,
+                    'notes' => $data['notes'] ?? null,
+                ]
+            );
 
             // Process symptoms if provided (from detailed check-in form)
             if (isset($data['symptoms']) && is_array($data['symptoms'])) {
@@ -100,6 +104,119 @@ class CheckInService
 
             return $checkin;
         });
+    }
+
+    /**
+     * Process a moment check-in for a user (quick mood tracking, multiple per day).
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function processMomentCheckIn(User $user, array $data): MomentCheckin
+    {
+        return DB::transaction(function () use ($user, $data) {
+            Log::debug('Processing moment check-in', [
+                'user_id' => $user->id,
+                'data' => $data,
+            ]);
+
+            $occurredAt = isset($data['occurred_at'])
+                ? Carbon::parse($data['occurred_at'])
+                : Carbon::now();
+
+            Log::debug('Parsed occurred_at', [
+                'user_id' => $user->id,
+                'occurred_at' => $occurredAt->toDateTimeString(),
+                'original_value' => $data['occurred_at'] ?? null,
+            ]);
+
+            // Map mood to feeling_level if not provided
+            $feelingLevel = $data['feeling_level'] ?? null;
+            if (! $feelingLevel && isset($data['mood'])) {
+                $moodMap = [
+                    '😄' => 9,
+                    '🙂' => 7,
+                    '😐' => 5,
+                    '😴' => 4,
+                    '😣' => 3,
+                ];
+                $feelingLevel = $moodMap[$data['mood']] ?? null;
+                Log::debug('Mapped mood to feeling_level', [
+                    'user_id' => $user->id,
+                    'mood' => $data['mood'],
+                    'feeling_level' => $feelingLevel,
+                ]);
+            }
+
+            // Create new moment check-in (no unique constraint, multiple per day allowed)
+            $momentCheckin = MomentCheckin::create([
+                'user_id' => $user->id,
+                'feeling_level' => $feelingLevel,
+                'mood' => $data['mood'] ?? null,
+                'tags' => $data['tags'] ?? null,
+                'occurred_at' => $occurredAt,
+            ]);
+
+            Log::debug('Created moment check-in', [
+                'user_id' => $user->id,
+                'moment_checkin_id' => $momentCheckin->id,
+                'feeling_level' => $feelingLevel,
+                'mood' => $data['mood'] ?? null,
+                'tags' => $data['tags'] ?? null,
+            ]);
+
+            // Process symptoms if provided
+            if (isset($data['symptoms']) && is_array($data['symptoms'])) {
+                Log::debug('Processing symptoms', [
+                    'user_id' => $user->id,
+                    'symptom_count' => count($data['symptoms']),
+                ]);
+
+                foreach ($data['symptoms'] as $symptomData) {
+                    $symptomLog = SymptomLog::create([
+                        'user_id' => $user->id,
+                        'symptom_code' => $symptomData['code'],
+                        'severity' => $symptomData['severity'] ?? 0,
+                        'occurred_at' => $symptomData['occurred_at'] ?? $occurredAt,
+                        'source' => 'moment_checkin',
+                    ]);
+
+                    Log::debug('Created symptom log', [
+                        'user_id' => $user->id,
+                        'symptom_log_id' => $symptomLog->id,
+                        'symptom_code' => $symptomData['code'],
+                        'severity' => $symptomData['severity'] ?? 0,
+                    ]);
+                }
+            }
+
+            // Add to timeline
+            $this->timelineService->addEvent($user, 'moment_checkin', $momentCheckin->id, $occurredAt);
+
+            Log::debug('Added event to timeline', [
+                'user_id' => $user->id,
+                'moment_checkin_id' => $momentCheckin->id,
+                'occurred_at' => $occurredAt->toDateTimeString(),
+            ]);
+
+            // Trigger rule engine evaluation after creating symptom logs
+            if (isset($data['symptoms']) && is_array($data['symptoms']) && count($data['symptoms']) > 0) {
+                $this->ruleEngineService->evaluate($user);
+            }
+
+            return $momentCheckin;
+        });
+    }
+
+    /**
+     * Process a daily check-in for a user (backward compatibility).
+     *
+     * @deprecated Use processDailyCheckIn instead
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function processCheckIn(User $user, array $data): DailyCheckin
+    {
+        return $this->processDailyCheckIn($user, $data);
     }
 
     /**

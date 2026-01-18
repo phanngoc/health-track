@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Alert;
 use App\Models\DailyCheckin;
 use App\Models\Insight;
+use App\Models\MomentCheckin;
 use App\Models\SymptomLog;
 use App\Services\InsightService;
 use Carbon\Carbon;
@@ -191,11 +192,10 @@ class TimelineController extends Controller
             ];
         }
 
-        // Get check-ins with symptoms (meaningful)
-        // Order by created_at để hiển thị check-ins mới nhất (kể cả nhiều check-in cùng ngày)
+        // Get daily check-ins (baseline, 1 per day)
         $checkins = DailyCheckin::where('user_id', $user->id)
             ->where('checkin_date', '>=', $startDate)
-            ->orderBy('created_at', 'desc')
+            ->orderBy('checkin_date', 'desc')
             ->get();
 
         foreach ($checkins as $checkin) {
@@ -213,10 +213,48 @@ class TimelineController extends Controller
                     'icon' => '📝',
                     'color' => 'blue',
                     'title' => 'Check-in Hằng Ngày',
+                    'message' => $checkin->overall_feeling ? "Cảm giác tổng thể: {$checkin->overall_feeling}/10" : null,
                     'data' => $checkin,
                     'symptoms' => $symptoms,
                 ];
             }
+        }
+
+        // Get moment check-ins (quick mood tracking, multiple per day)
+        $momentCheckins = MomentCheckin::where('user_id', $user->id)
+            ->where('occurred_at', '>=', $startDate)
+            ->orderBy('occurred_at', 'desc')
+            ->get();
+
+        foreach ($momentCheckins as $momentCheckin) {
+            $tagsDisplay = $momentCheckin->tags && is_array($momentCheckin->tags)
+                ? ' ('.implode(' ', $momentCheckin->tags).')'
+                : '';
+
+            // Load symptom logs for this moment check-in
+            // Match symptoms created within 5 seconds of the moment check-in (same transaction)
+            $symptoms = SymptomLog::where('user_id', $user->id)
+                ->where('source', 'moment_checkin')
+                ->whereBetween('occurred_at', [
+                    $momentCheckin->occurred_at->copy()->subSeconds(5),
+                    $momentCheckin->occurred_at->copy()->addSeconds(5),
+                ])
+                ->with('symptom')
+                ->get();
+
+            $events[] = [
+                'type' => 'moment_checkin',
+                'date' => $momentCheckin->occurred_at->format('Y-m-d'),
+                'time' => $momentCheckin->occurred_at,
+                'icon' => $momentCheckin->mood ?? '😐',
+                'color' => 'gray',
+                'title' => $momentCheckin->mood ?? 'Moment Check-in',
+                'message' => $momentCheckin->feeling_level
+                    ? "Feeling: {$momentCheckin->feeling_level}/10{$tagsDisplay}"
+                    : $tagsDisplay,
+                'data' => $momentCheckin,
+                'symptoms' => $symptoms,
+            ];
         }
 
         // Get significant symptoms (severity >= 5 or critical)
@@ -236,23 +274,18 @@ class TimelineController extends Controller
             });
 
         foreach ($significantSymptoms as $log) {
-            // Skip if already included in check-in
-            $alreadyIncluded = collect($events)->contains(function ($event) use ($log) {
-                return $event['type'] === 'checkin'
-                    && $event['date'] === $log->occurred_at->format('Y-m-d');
-            });
-
-            if (! $alreadyIncluded) {
-                $events[] = [
-                    'type' => 'symptom',
-                    'date' => $log->occurred_at->format('Y-m-d'),
-                    'time' => $log->occurred_at,
-                    'icon' => $log->symptom->is_critical ?? false ? '🩹' : '🤧',
-                    'color' => $log->severity >= 7 ? 'red' : ($log->severity >= 5 ? 'orange' : 'yellow'),
-                    'title' => ($log->symptom->display_name ?? $log->symptom_code).': '.$log->severity.'/10',
-                    'data' => $log,
-                ];
-            }
+            // Show symptom_logs as standalone events even if they're in check-ins
+            // This allows users to see all symptom_logs clearly in the timeline
+            // Users can see symptoms both in check-in events (as tags) and as standalone events
+            $events[] = [
+                'type' => 'symptom',
+                'date' => $log->occurred_at->format('Y-m-d'),
+                'time' => $log->occurred_at,
+                'icon' => $log->symptom->is_critical ?? false ? '🩹' : '🤧',
+                'color' => $log->severity >= 7 ? 'red' : ($log->severity >= 5 ? 'orange' : 'yellow'),
+                'title' => ($log->symptom->display_name ?? $log->symptom_code).': '.$log->severity.'/10',
+                'data' => $log,
+            ];
         }
 
         // Sort by time (descending) and group by date

@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreCheckInRequest;
 use App\Models\Symptom;
 use App\Services\CheckInService;
-use Carbon\Carbon;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -57,7 +56,7 @@ class CheckInController extends Controller
 
     public function store(StoreCheckInRequest $request): RedirectResponse
     {
-        $checkin = $this->checkInService->processCheckIn(
+        $checkin = $this->checkInService->processDailyCheckIn(
             $request->user(),
             $request->validated()
         );
@@ -72,20 +71,24 @@ class CheckInController extends Controller
             'mood' => ['required', 'string', 'in:🙂,😐,😴,😣,😄'],
             'tags' => ['nullable', 'array', 'max:2'],
             'tags.*' => ['string', 'in:🏃‍♂️,🍺,😴,💼,🤒,❤️'],
+            'symptoms' => ['nullable', 'array'],
+            'symptoms.*.code' => ['required_with:symptoms.*.severity', 'string'],
+            'symptoms.*.severity' => ['required_with:symptoms.*.code', 'integer', 'min:0', 'max:10'],
+            'symptoms.*.occurred_at' => ['nullable', 'date'],
         ]);
 
-        $checkin = $this->checkInService->processCheckIn(
+        $momentCheckin = $this->checkInService->processMomentCheckIn(
             $request->user(),
             [
                 'mood' => $validated['mood'],
                 'tags' => $validated['tags'] ?? [],
-                'checkin_date' => Carbon::today(),
+                'symptoms' => $validated['symptoms'] ?? [],
             ]
         );
 
         return response()->json([
             'success' => true,
-            'message' => 'Check-in đã được lưu thành công!',
+            'message' => 'Moment check-in đã được lưu thành công!',
         ]);
     }
 }

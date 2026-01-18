@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\DailyCheckin;
+use App\Models\Symptom;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 
@@ -30,10 +31,13 @@ class HomeController extends Controller
                 ->get();
         }
 
+        $symptoms = Symptom::orderBy('display_name')->get();
+
         return view('home', [
             'user' => $user,
             'hasTodayCheckin' => $hasTodayCheckin,
             'recentCheckins' => $recentCheckins,
+            'symptoms' => $symptoms,
         ]);
     }
 }

@@ -60,6 +60,14 @@ class User extends Authenticatable
     }
 
     /**
+     * Get the moment check-ins for the user.
+     */
+    public function momentCheckins(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(MomentCheckin::class);
+    }
+
+    /**
      * Get the symptom logs for the user.
      */
     public function symptomLogs(): \Illuminate\Database\Eloquent\Relations\HasMany

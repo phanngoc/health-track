@@ -14,6 +14,7 @@ Route::get('/user', function (Request $request) {
 Route::middleware('auth:sanctum')->group(function () {
     // Check-in routes
     Route::apiResource('checkins', CheckInController::class);
+    Route::post('checkins/moment', [CheckInController::class, 'storeMoment']);
 
     // Timeline routes
     Route::get('timeline', [TimelineController::class, 'index']);

@@ -36,4 +36,13 @@ class DailyCheckin extends Model
     {
         return $this->belongsTo(User::class);
     }
+
+    /**
+     * Get the moment check-ins for this date.
+     */
+    public function momentCheckins(): \Illuminate\Database\Eloquent\Relations\HasMany
+    {
+        return $this->hasMany(MomentCheckin::class, 'user_id', 'user_id')
+            ->whereDate('occurred_at', $this->checkin_date);
+    }
 }

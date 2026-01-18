@@ -187,6 +187,40 @@
                                             </div>
                                         @endif
 
+                                        @if($event['type'] === 'moment_checkin')
+                                            <div class="mt-2 text-sm text-gray-600">
+                                                @if($event['data']->feeling_level)
+                                                    Feeling: {{ $event['data']->feeling_level }}/10
+                                                @endif
+                                                @if($event['data']->tags && is_array($event['data']->tags) && count($event['data']->tags) > 0)
+                                                    <span class="ml-2">{{ implode(' ', $event['data']->tags) }}</span>
+                                                @endif
+                                            </div>
+                                            
+                                            @if(isset($event['symptoms']) && $event['symptoms']->count() > 0)
+                                                <div class="mt-2 flex flex-wrap gap-2">
+                                                    @foreach($event['symptoms'] as $symptom)
+                                                        <span class="px-2 py-1 bg-white rounded text-xs text-gray-700">
+                                                            {{ $symptom->symptom->display_name ?? $symptom->symptom_code }} ({{ $symptom->severity }}/10)
+                                                        </span>
+                                                    @endforeach
+                                                </div>
+                                            @endif
+                                        @endif
+
+                                        @if($event['type'] === 'symptom')
+                                            <div class="mt-2 text-sm text-gray-600">
+                                                @if($event['data']->symptom)
+                                                    <div class="flex items-center gap-2">
+                                                        <span class="font-medium">{{ $event['data']->symptom->display_name ?? $event['data']->symptom_code }}</span>
+                                                        <span class="text-gray-500">({{ $event['data']->severity }}/10)</span>
+                                                    </div>
+                                                @else
+                                                    <span>{{ $event['data']->symptom_code }}: {{ $event['data']->severity }}/10</span>
+                                                @endif
+                                            </div>
+                                        @endif
+
                                         @if($event['type'] === 'insight')
                                             <div class="mt-3">
                                                 <a href="{{ route('insights.explain', $event['data']->id) }}" 

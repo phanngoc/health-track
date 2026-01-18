@@ -153,7 +153,7 @@
     <div id="checkin-modal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden">
         <div class="absolute bottom-0 left-0 right-0 bg-white rounded-t-3xl modal-enter max-w-md mx-auto" style="max-width: 390px;">
             <div id="modal-content" class="p-6">
-                @include('checkins.modal')
+                @include('checkins.modal', ['symptoms' => $symptoms ?? collect()])
             </div>
         </div>
     </div>
@@ -163,74 +163,201 @@
             let currentStep = 1;
             let selectedMood = null;
             let selectedTags = [];
+            let selectedSymptoms = [];
             const maxTags = 2;
 
             const modal = document.getElementById('checkin-modal');
             const checkinBtn = document.getElementById('checkin-btn');
 
+            // Store event handlers to prevent duplicates
+            let emojiClickHandler = null;
+            let tagClickHandler = null;
+            let symptomCheckboxHandler = null;
+            let severityChangeHandler = null;
+            let continueStep1Handler = null;
+            let continueStep2Handler = null;
+            let skipStep2Handler = null;
+            let continueStep3Handler = null;
+            let skipStep3Handler = null;
+
             function initializeModal() {
                 const emojiBtns = document.querySelectorAll('.emoji-btn');
                 const continueStep1 = document.getElementById('continue-step-1');
 
-                emojiBtns.forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        emojiBtns.forEach(b => {
-                            b.style.transform = 'scale(1)';
-                            b.style.opacity = '1';
-                        });
+                // Remove old listeners if they exist
+                if (emojiClickHandler) {
+                    emojiBtns.forEach(btn => {
+                        btn.removeEventListener('click', emojiClickHandler);
+                    });
+                }
 
-                        selectedMood = this.dataset.mood;
-                        this.style.transform = 'scale(1.1)';
-                        emojiBtns.forEach(b => {
-                            if (b !== this) {
-                                b.style.opacity = '0.4';
-                            }
-                        });
+                // Create new handler
+                emojiClickHandler = function() {
+                    emojiBtns.forEach(b => {
+                        b.style.transform = 'scale(1)';
+                        b.style.opacity = '1';
+                    });
 
-                        if (continueStep1) {
-                            continueStep1.disabled = false;
-                            continueStep1.classList.remove('bg-gray-300', 'text-gray-500');
-                            continueStep1.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+                    selectedMood = this.dataset.mood;
+                    this.style.transform = 'scale(1.1)';
+                    emojiBtns.forEach(b => {
+                        if (b !== this) {
+                            b.style.opacity = '0.4';
                         }
                     });
+
+                    if (continueStep1) {
+                        continueStep1.disabled = false;
+                        continueStep1.classList.remove('bg-gray-300', 'text-gray-500');
+                        continueStep1.classList.add('bg-blue-600', 'text-white', 'hover:bg-blue-700');
+                    }
+                };
+
+                emojiBtns.forEach(btn => {
+                    btn.addEventListener('click', emojiClickHandler);
                 });
 
                 const tagBtns = document.querySelectorAll('.tag-btn');
                 const continueStep2 = document.getElementById('continue-step-2');
                 const skipStep2 = document.getElementById('skip-step-2');
 
-                tagBtns.forEach(btn => {
-                    btn.addEventListener('click', function() {
-                        const tag = this.dataset.tag;
-                        const index = selectedTags.indexOf(tag);
-
-                        if (index > -1) {
-                            selectedTags.splice(index, 1);
-                            this.classList.remove('bg-blue-600', 'text-white');
-                            this.classList.add('bg-gray-100', 'text-gray-700');
-                        } else {
-                            if (selectedTags.length < maxTags) {
-                                selectedTags.push(tag);
-                                this.classList.remove('bg-gray-100', 'text-gray-700');
-                                this.classList.add('bg-blue-600', 'text-white');
-                            }
-                        }
+                // Remove old listeners if they exist
+                if (tagClickHandler) {
+                    tagBtns.forEach(btn => {
+                        btn.removeEventListener('click', tagClickHandler);
                     });
+                }
+
+                // Create new handler
+                tagClickHandler = function() {
+                    const tag = this.dataset.tag;
+                    const index = selectedTags.indexOf(tag);
+
+                    if (index > -1) {
+                        selectedTags.splice(index, 1);
+                        this.classList.remove('bg-blue-600', 'text-white');
+                        this.classList.add('bg-gray-100', 'text-gray-700');
+                    } else {
+                        if (selectedTags.length < maxTags) {
+                            selectedTags.push(tag);
+                            this.classList.remove('bg-gray-100', 'text-gray-700');
+                            this.classList.add('bg-blue-600', 'text-white');
+                        }
+                    }
+                };
+
+                tagBtns.forEach(btn => {
+                    btn.addEventListener('click', tagClickHandler);
                 });
 
+                // Remove old listeners
+                if (continueStep1 && continueStep1Handler) {
+                    continueStep1.removeEventListener('click', continueStep1Handler);
+                }
+                if (continueStep2 && continueStep2Handler) {
+                    continueStep2.removeEventListener('click', continueStep2Handler);
+                }
+                if (skipStep2 && skipStep2Handler) {
+                    skipStep2.removeEventListener('click', skipStep2Handler);
+                }
+
+                // Create new handlers
                 if (continueStep1) {
-                    continueStep1.addEventListener('click', () => showStep(2));
+                    continueStep1Handler = () => showStep(2);
+                    continueStep1.addEventListener('click', continueStep1Handler);
                 }
 
                 if (continueStep2) {
-                    continueStep2.addEventListener('click', () => submitCheckIn());
+                    continueStep2Handler = () => showStep(3);
+                    continueStep2.addEventListener('click', continueStep2Handler);
                 }
 
                 if (skipStep2) {
-                    skipStep2.addEventListener('click', () => {
+                    skipStep2Handler = () => {
                         selectedTags = [];
-                        submitCheckIn();
+                        showStep(3);
+                    };
+                    skipStep2.addEventListener('click', skipStep2Handler);
+                }
+
+                // Symptom selection handlers
+                const symptomCheckboxes = document.querySelectorAll('.symptom-checkbox');
+                const severitySelects = document.querySelectorAll('.severity-select');
+
+                // Remove old listeners if they exist
+                if (symptomCheckboxHandler) {
+                    symptomCheckboxes.forEach(cb => {
+                        cb.removeEventListener('change', symptomCheckboxHandler);
                     });
+                }
+                if (severityChangeHandler) {
+                    severitySelects.forEach(select => {
+                        select.removeEventListener('change', severityChangeHandler);
+                    });
+                }
+
+                // Create new handlers
+                symptomCheckboxHandler = function() {
+                    const code = this.dataset.symptomCode;
+                    const name = this.dataset.symptomName;
+                    const severityDiv = this.closest('.symptom-item').querySelector('.symptom-severity');
+                    const severitySelect = severityDiv.querySelector('.severity-select');
+
+                    if (this.checked) {
+                        severityDiv.classList.remove('hidden');
+                        const severity = parseInt(severitySelect.value);
+                        selectedSymptoms.push({
+                            code: code,
+                            name: name,
+                            severity: severity
+                        });
+                    } else {
+                        severityDiv.classList.add('hidden');
+                        selectedSymptoms = selectedSymptoms.filter(s => s.code !== code);
+                    }
+                };
+
+                severityChangeHandler = function() {
+                    const code = this.dataset.symptomCode;
+                    const severity = parseInt(this.value);
+                    const symptom = selectedSymptoms.find(s => s.code === code);
+                    if (symptom) {
+                        symptom.severity = severity;
+                    }
+                };
+
+                symptomCheckboxes.forEach(cb => {
+                    cb.addEventListener('change', symptomCheckboxHandler);
+                });
+
+                severitySelects.forEach(select => {
+                    select.addEventListener('change', severityChangeHandler);
+                });
+
+                // Step 3 handlers
+                const continueStep3 = document.getElementById('continue-step-3');
+                const skipStep3 = document.getElementById('skip-step-3');
+
+                // Remove old listeners
+                if (continueStep3 && continueStep3Handler) {
+                    continueStep3.removeEventListener('click', continueStep3Handler);
+                }
+                if (skipStep3 && skipStep3Handler) {
+                    skipStep3.removeEventListener('click', skipStep3Handler);
+                }
+
+                // Create new handlers
+                if (continueStep3) {
+                    continueStep3Handler = () => submitCheckIn();
+                    continueStep3.addEventListener('click', continueStep3Handler);
+                }
+
+                if (skipStep3) {
+                    skipStep3Handler = () => {
+                        selectedSymptoms = [];
+                        submitCheckIn();
+                    };
+                    skipStep3.addEventListener('click', skipStep3Handler);
                 }
             }
 
@@ -247,10 +374,28 @@
             }
 
             function submitCheckIn() {
-                if (!selectedMood) return;
+                console.log('submitCheckIn called, selectedMood:', selectedMood, 'selectedTags:', selectedTags, 'selectedSymptoms:', selectedSymptoms);
+                
+                if (!selectedMood) {
+                    console.error('No mood selected!');
+                    alert('Vui lòng chọn mood trước khi hoàn tất.');
+                    return;
+                }
 
                 const token = document.querySelector('meta[name="csrf-token"]')?.content || 
                              '{{ csrf_token() }}';
+
+                // Disable buttons during submission
+                const continueStep3 = document.getElementById('continue-step-3');
+                const skipStep3 = document.getElementById('skip-step-3');
+                if (continueStep3) continueStep3.disabled = true;
+                if (skipStep3) skipStep3.disabled = true;
+
+                // Format symptoms for submission
+                const symptoms = selectedSymptoms.map(s => ({
+                    code: s.code,
+                    severity: s.severity
+                }));
 
                 fetch('/checkins/quick', {
                     method: 'POST',
@@ -261,24 +406,33 @@
                     },
                     body: JSON.stringify({
                         mood: selectedMood,
-                        tags: selectedTags
+                        tags: selectedTags,
+                        symptoms: symptoms
                     })
                 })
-                .then(response => response.json())
+                .then(response => {
+                    console.log('Response status:', response.status);
+                    return response.json();
+                })
                 .then(result => {
+                    console.log('Response result:', result);
                     if (result.success) {
-                        showStep(3);
+                        showStep(4);
                         setTimeout(() => {
                             closeModal();
                             window.location.reload();
                         }, 600);
                     } else {
                         alert('Có lỗi xảy ra. Vui lòng thử lại.');
+                        if (continueStep3) continueStep3.disabled = false;
+                        if (skipStep3) skipStep3.disabled = false;
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Có lỗi xảy ra. Vui lòng thử lại.');
+                    if (continueStep3) continueStep3.disabled = false;
+                    if (skipStep3) skipStep3.disabled = false;
                 });
             }
 
@@ -288,6 +442,7 @@
                 currentStep = 1;
                 selectedMood = null;
                 selectedTags = [];
+                selectedSymptoms = [];
                 showStep(1);
                 initializeModal();
             }
