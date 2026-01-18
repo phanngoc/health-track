@@ -40,11 +40,20 @@
                         <div class="mb-2">
                             <span class="text-gray-700 font-medium">Triệu chứng chính: </span>
                             <span class="text-gray-900 font-semibold">{{ $insight['primary_symptom']['name'] }}</span>
-                            <span class="text-2xl ml-2">{{ $insightService->getTrendArrow($insight['trend']['direction']) }}</span>
-                            @if($insight['trend']['direction'] === 'increasing')
-                                <span class="text-orange-600 ml-1">tăng nhẹ</span>
-                            @elseif($insight['trend']['direction'] === 'decreasing')
-                                <span class="text-green-600 ml-1">giảm</span>
+                            @php
+                                // Use trend from headerInsight if available (new system), otherwise fallback to old insight
+                                $trendDirection = null;
+                                if (isset($headerInsight) && isset($headerInsight['metadata']['trend']['direction'])) {
+                                    $trendDirection = $headerInsight['metadata']['trend']['direction'];
+                                } else {
+                                    $trendDirection = $insight['trend']['direction'] ?? 'stable';
+                                }
+                            @endphp
+                            <span class="text-2xl ml-2">{{ $insightService->getTrendArrow($trendDirection) }}</span>
+                            @if(in_array($trendDirection, ['increasing', 'worsening']))
+                                <span class="text-orange-600 ml-1">đang nặng hơn</span>
+                            @elseif(in_array($trendDirection, ['decreasing', 'improving']))
+                                <span class="text-green-600 ml-1">đang cải thiện</span>
                             @else
                                 <span class="text-gray-600 ml-1">ổn định</span>
                             @endif

@@ -198,8 +198,8 @@ class InsightService
     public function getTrendArrow(string $direction): string
     {
         return match ($direction) {
-            'increasing' => '↗',
-            'decreasing' => '↘',
+            'increasing', 'worsening' => '↗',
+            'decreasing', 'improving' => '↘',
             default => '→',
         };
     }
