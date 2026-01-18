@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Insight;
+use App\Services\InsightExplanationService;
 use App\Services\InsightService;
 use Illuminate\Http\Request;
 use Illuminate\View\View;
@@ -10,7 +11,8 @@ use Illuminate\View\View;
 class InsightController extends Controller
 {
     public function __construct(
-        private InsightService $insightService
+        private InsightService $insightService,
+        private InsightExplanationService $explanationService
     ) {}
 
     /**
@@ -23,8 +25,12 @@ class InsightController extends Controller
             abort(403);
         }
 
+        // Build structured explanation
+        $explanation = $this->explanationService->buildExplanation($insight);
+
         return view('insights.explain', [
             'insight' => $insight,
+            'explanation' => $explanation,
         ]);
     }
 }

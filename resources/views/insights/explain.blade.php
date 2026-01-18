@@ -9,7 +9,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gradient-to-br from-blue-50 via-white to-green-50 min-h-screen">
-    <div class="container mx-auto px-4 py-8 max-w-6xl">
+    <div class="container mx-auto px-4 py-8 max-w-4xl">
         <!-- Header -->
         <div class="mb-8">
             <div class="flex items-center justify-between">
@@ -32,96 +32,156 @@
                 <div class="flex-1">
                     <div class="mb-3">
                         <span class="px-3 py-1 bg-blue-100 text-blue-800 text-xs font-semibold rounded-full">
-                            {{ $insight->type }}
+                            {{ $explanation['insight_summary']['type'] }}
                         </span>
                         <span class="ml-2 px-3 py-1 bg-gray-100 text-gray-800 text-xs font-semibold rounded-full">
-                            {{ strtoupper($insight->priority) }}
+                            {{ strtoupper($explanation['insight_summary']['priority']) }}
                         </span>
                     </div>
-                    <h2 class="text-xl font-bold text-gray-900 mb-2">{{ $insight->message }}</h2>
+                    <h2 class="text-xl font-bold text-gray-900 mb-2">{{ $explanation['insight_summary']['message'] }}</h2>
                     <p class="text-sm text-gray-500">
-                        Được tạo vào: {{ $insight->generated_at->format('d/m/Y H:i') }}
+                        Được tạo vào: {{ $explanation['insight_summary']['created_at']->format('d/m/Y H:i') }}
                     </p>
                 </div>
             </div>
         </div>
 
-        <!-- Explanation -->
-        <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Dữ liệu được sử dụng</h3>
-            
-            @if($insight->explanation_data && isset($insight->explanation_data['data_used']))
-                @php
-                    $dataUsed = $insight->explanation_data['data_used'];
-                @endphp
+        <!-- Story Section (NEW - Prominent) -->
+        @if(isset($explanation['story']))
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">{{ $explanation['story']['headline'] }}</h3>
+                
+                <p class="text-gray-700 text-base leading-relaxed mb-4">
+                    {{ $explanation['story']['narrative'] }}
+                </p>
 
-                @if(isset($dataUsed['trend']))
-                    <div class="mb-4 p-4 bg-blue-50 rounded-lg">
-                        <h4 class="font-semibold text-gray-900 mb-2">Xu hướng (3 ngày gần đây)</h4>
-                        <div class="space-y-1 text-sm text-gray-700">
-                            <p><strong>Hướng:</strong> 
-                                @if($dataUsed['trend']['direction'] === 'worsening')
-                                    <span class="text-red-600">Nặng hơn</span>
-                                @elseif($dataUsed['trend']['direction'] === 'improving')
-                                    <span class="text-green-600">Cải thiện</span>
-                                @else
-                                    <span class="text-gray-600">Ổn định</span>
-                                @endif
+                @if(!empty($explanation['story']['key_facts']))
+                    <div class="bg-blue-50 rounded-lg p-4 mt-4">
+                        <h4 class="font-semibold text-gray-900 mb-2 text-sm">Điểm quan trọng:</h4>
+                        <ul class="space-y-1">
+                            @foreach($explanation['story']['key_facts'] as $fact)
+                                <li class="text-sm text-gray-700 flex items-start">
+                                    <span class="text-blue-600 mr-2">•</span>
+                                    <span>{{ $fact }}</span>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+            </div>
+        @endif
+
+        <!-- Data Summary Section (REDESIGNED) -->
+        @if(isset($explanation['data_summary']))
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Dữ liệu được sử dụng</h3>
+                
+                <div class="space-y-4">
+                    <!-- Time Period -->
+                    @if(isset($explanation['data_summary']['time_period']))
+                        <div class="flex items-center gap-2 text-sm text-gray-600">
+                            <span class="font-medium">Thời gian phân tích:</span>
+                            <span>{{ $explanation['data_summary']['time_period'] }}</span>
+                        </div>
+                    @endif
+
+                    <!-- Main Comparison -->
+                    @if(isset($explanation['data_summary']['main_comparison']))
+                        <div class="bg-green-50 rounded-lg p-4 border-l-4 border-green-500">
+                            <h4 class="font-semibold text-gray-900 mb-2">So sánh chính</h4>
+                            <p class="text-gray-700">
+                                Mức độ triệu chứng hiện tại {{ $explanation['data_summary']['main_comparison'] }}
                             </p>
-                            @if(isset($dataUsed['trend']['3d_avg']) && isset($dataUsed['trend']['7d_avg']))
-                                <p><strong>Trung bình 3 ngày:</strong> {{ $dataUsed['trend']['3d_avg'] }}/10</p>
-                                <p><strong>Trung bình 7 ngày:</strong> {{ $dataUsed['trend']['7d_avg'] }}/10</p>
-                            @endif
                         </div>
-                    </div>
-                @endif
+                    @endif
 
-                @if(isset($dataUsed['pattern']))
-                    <div class="mb-4 p-4 bg-purple-50 rounded-lg">
-                        <h4 class="font-semibold text-gray-900 mb-2">Quy luật phát hiện</h4>
-                        <div class="space-y-1 text-sm text-gray-700">
-                            @if(isset($dataUsed['pattern']['pattern']))
-                                <p><strong>Loại:</strong> {{ $dataUsed['pattern']['pattern'] }}</p>
-                            @endif
-                            @if(isset($dataUsed['pattern']['night_avg']) && isset($dataUsed['pattern']['day_avg']))
-                                <p><strong>Trung bình ban đêm:</strong> {{ $dataUsed['pattern']['night_avg'] }}/10</p>
-                                <p><strong>Trung bình ban ngày:</strong> {{ $dataUsed['pattern']['day_avg'] }}/10</p>
-                            @endif
+                    <!-- Supporting Data -->
+                    @if(!empty($explanation['data_summary']['supporting_data']))
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            @foreach($explanation['data_summary']['supporting_data'] as $data)
+                                <div class="bg-gray-50 rounded-lg p-3">
+                                    <div class="text-xs text-gray-500 mb-1">{{ $data['label'] }}</div>
+                                    <div class="text-lg font-semibold text-gray-900">{{ $data['value'] }}</div>
+                                </div>
+                            @endforeach
                         </div>
-                    </div>
-                @endif
-
-                @if(isset($dataUsed['comparison']))
-                    <div class="mb-4 p-4 bg-green-50 rounded-lg">
-                        <h4 class="font-semibold text-gray-900 mb-2">So sánh</h4>
-                        <div class="space-y-1 text-sm text-gray-700">
-                            <p><strong>Cơ sở so sánh:</strong> {{ $dataUsed['comparison']['baseline'] === 'last_week' ? 'Tuần trước' : 'Trung bình cá nhân' }}</p>
-                            <p><strong>Hiện tại:</strong> {{ $dataUsed['comparison']['current_avg'] }}/10</p>
-                            <p><strong>Cơ sở:</strong> {{ $dataUsed['comparison']['baseline_avg'] }}/10</p>
-                        </div>
-                    </div>
-                @endif
-            @else
-                <div class="p-4 bg-gray-50 rounded-lg">
-                    <p class="text-sm text-gray-600">Không có dữ liệu giải thích chi tiết.</p>
+                    @endif
                 </div>
-            @endif
-        </div>
+            </div>
+        @endif
 
-        <!-- Simple Rule Explanation -->
-        <div class="bg-white rounded-xl shadow-lg p-6">
-            <h3 class="text-lg font-semibold text-gray-900 mb-4">Quy tắc đơn giản</h3>
-            <div class="prose max-w-none">
-                <p class="text-gray-700">
-                    Insight này được tạo dựa trên dữ liệu sức khỏe bạn ghi nhận trong 3 ngày gần đây.
-                    Hệ thống so sánh xu hướng và phát hiện các quy luật để đưa ra nhận định.
-                </p>
-                <p class="text-gray-600 text-sm mt-4">
-                    <strong>Lưu ý:</strong> Insight không phải là chẩn đoán y tế. 
-                    Nếu bạn có lo ngại về sức khỏe, hãy trao đổi với bác sĩ.
-                </p>
+        <!-- What This Means (NEW - Actionable Insights) -->
+        @if(!empty($explanation['actionable_insights']))
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6 border-l-4 border-purple-500">
+                <h3 class="text-lg font-semibold text-gray-900 mb-4">Điều này có nghĩa là:</h3>
+                <ul class="space-y-2">
+                    @foreach($explanation['actionable_insights'] as $action)
+                        <li class="flex items-start gap-3 text-gray-700">
+                            <span class="text-purple-600 mt-1">→</span>
+                            <span>{{ $action }}</span>
+                        </li>
+                    @endforeach
+                </ul>
+            </div>
+        @endif
+
+        <!-- Technical Details (COLLAPSIBLE) -->
+        @if(isset($explanation['technical_details']))
+            <div class="bg-white rounded-xl shadow-lg p-6 mb-6">
+                <button 
+                    onclick="toggleTechnicalDetails()"
+                    class="w-full flex items-center justify-between text-left font-semibold text-gray-700 hover:text-gray-900 transition"
+                    id="technical-toggle-btn">
+                    <span>Chi tiết kỹ thuật</span>
+                    <span id="technical-toggle-icon">⌄</span>
+                </button>
+                
+                <div id="technical-details" class="hidden mt-4 pt-4 border-t border-gray-200">
+                    @if(isset($explanation['technical_details']['rule_code']))
+                        <div class="mb-3">
+                            <span class="text-xs font-medium text-gray-500">Mã quy tắc:</span>
+                            <span class="text-xs text-gray-700 ml-2 font-mono">{{ $explanation['technical_details']['rule_code'] }}</span>
+                        </div>
+                    @endif
+
+                    @if(isset($explanation['technical_details']['raw_data']) && !empty($explanation['technical_details']['raw_data']))
+                        <div class="bg-gray-50 rounded-lg p-4">
+                            <span class="text-xs font-medium text-gray-500 block mb-2">Dữ liệu thô:</span>
+                            <pre class="text-xs text-gray-700 overflow-x-auto">{{ json_encode($explanation['technical_details']['raw_data'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>
+                        </div>
+                    @endif
+                </div>
+            </div>
+        @endif
+
+        <!-- Disclaimer -->
+        <div class="bg-yellow-50 rounded-xl shadow-lg p-6 border-l-4 border-yellow-500">
+            <div class="flex items-start gap-3">
+                <span class="text-2xl">⚠️</span>
+                <div>
+                    <h4 class="font-semibold text-gray-900 mb-2">Lưu ý quan trọng</h4>
+                    <p class="text-sm text-gray-700">
+                        Insight này không phải là chẩn đoán y tế. Nó được tạo dựa trên dữ liệu bạn ghi nhận và các quy luật thống kê. 
+                        Nếu bạn có lo ngại về sức khỏe, hãy trao đổi với bác sĩ.
+                    </p>
+                </div>
             </div>
         </div>
     </div>
+
+    <script>
+        function toggleTechnicalDetails() {
+            const details = document.getElementById('technical-details');
+            const icon = document.getElementById('technical-toggle-icon');
+            
+            if (details.classList.contains('hidden')) {
+                details.classList.remove('hidden');
+                icon.textContent = '⌃';
+            } else {
+                details.classList.add('hidden');
+                icon.textContent = '⌄';
+            }
+        }
+    </script>
 </body>
 </html>

@@ -64,19 +64,15 @@ class TimelineController extends Controller
         // Layer 2: Visual Trend Strip (7 days)
         $trendStrip = $this->getTrendStrip($user);
 
-        // Layer 3: Event Timeline (last 7 days, meaningful events only)
-        $events = $this->getMeaningfulEvents($user);
-
-        // Add insights to timeline events
-        $insightEvents = $this->getInsightEvents($user);
-        $events = $this->mergeInsightsIntoEvents($events, $insightEvents);
+        // Layer 3: Event Timeline with 3-level hierarchy (last 7 days)
+        $daysData = $this->getStructuredDaysData($user);
 
         return view('timeline.index', [
             'insight' => $oldInsight, // Keep for backward compatibility
             'insights' => $newInsights, // New insights array
             'headerInsight' => $headerInsight, // Primary insight for header
             'trendStrip' => $trendStrip,
-            'events' => $events,
+            'daysData' => $daysData,
             'insightService' => $this->insightService,
         ]);
     }
@@ -166,7 +162,185 @@ class TimelineController extends Controller
     }
 
     /**
+     * Get structured days data with 3-level hierarchy (last 7 days).
+     */
+    private function getStructuredDaysData($user): array
+    {
+        $startDate = Carbon::today()->subDays(7);
+        $today = Carbon::today();
+        $daysData = [];
+
+        // Get all events first
+        $allEvents = $this->getAllEvents($user, $startDate);
+        $insightEvents = $this->getInsightEvents($user);
+        $allEvents = array_merge($allEvents, $insightEvents);
+
+        // Group events by date
+        $eventsByDate = collect($allEvents)->groupBy('date');
+
+        // Process each day
+        for ($i = 0; $i <= 6; $i++) {
+            $date = $today->copy()->subDays(6 - $i);
+            $dateStr = $date->format('Y-m-d');
+
+            $dayEvents = $eventsByDate->get($dateStr, collect())->sortByDesc(function ($event) {
+                return $event['time']->timestamp;
+            })->values()->all();
+
+            // Get daily summary
+            $dailySummary = $this->getDailySummary($user, $date);
+
+            // Separate events by level
+            $level2Events = [];
+            $level3Events = [];
+
+            foreach ($dayEvents as $event) {
+                if ($event['type'] === 'moment_checkin') {
+                    $level3Events[] = $event;
+                } else {
+                    $level2Events[] = $event;
+                }
+            }
+
+            // Group moment check-ins
+            $momentGroup = $this->groupMomentCheckins($level3Events);
+
+            $daysData[] = [
+                'date' => $date,
+                'daily_summary' => $dailySummary,
+                'level_2_events' => $level2Events,
+                'level_3_events' => $momentGroup,
+            ];
+        }
+
+        // Reverse to show most recent first
+        return array_reverse($daysData);
+    }
+
+    /**
+     * Get all events (last 7 days).
+     */
+    private function getAllEvents($user, $startDate): array
+    {
+        $events = [];
+
+        // Get alerts (always meaningful)
+        $alerts = Alert::where('user_id', $user->id)
+            ->where('triggered_at', '>=', $startDate)
+            ->orderBy('triggered_at', 'desc')
+            ->get();
+
+        foreach ($alerts as $alert) {
+            $events[] = [
+                'type' => 'alert',
+                'date' => $alert->triggered_at->format('Y-m-d'),
+                'time' => $alert->triggered_at,
+                'icon' => $this->getAlertIcon($alert->severity),
+                'color' => $this->getAlertColor($alert->severity),
+                'title' => 'Cảnh báo: '.strtoupper($alert->severity),
+                'message' => $alert->message,
+                'data' => $alert,
+            ];
+        }
+
+        // Get daily check-ins (baseline, 1 per day)
+        $checkins = DailyCheckin::where('user_id', $user->id)
+            ->where('checkin_date', '>=', $startDate)
+            ->orderBy('checkin_date', 'desc')
+            ->get();
+
+        foreach ($checkins as $checkin) {
+            $symptoms = SymptomLog::where('user_id', $user->id)
+                ->whereDate('occurred_at', $checkin->checkin_date)
+                ->where('source', 'checkin')
+                ->with('symptom')
+                ->get();
+
+            // Always show daily check-in (it's Level 2 - baseline)
+            $events[] = [
+                'type' => 'checkin',
+                'date' => $checkin->checkin_date->format('Y-m-d'),
+                'time' => $checkin->created_at,
+                'icon' => '📝',
+                'color' => 'blue',
+                'title' => 'Check-in Hằng Ngày',
+                'message' => $checkin->overall_feeling ? "Cảm giác tổng thể: {$checkin->overall_feeling}/10" : null,
+                'data' => $checkin,
+                'symptoms' => $symptoms,
+            ];
+        }
+
+        // Get moment check-ins (quick mood tracking, multiple per day)
+        $momentCheckins = MomentCheckin::where('user_id', $user->id)
+            ->where('occurred_at', '>=', $startDate)
+            ->orderBy('occurred_at', 'desc')
+            ->get();
+
+        foreach ($momentCheckins as $momentCheckin) {
+            $tagsDisplay = $momentCheckin->tags && is_array($momentCheckin->tags)
+                ? ' ('.implode(' ', $momentCheckin->tags).')'
+                : '';
+
+            // Load symptom logs for this moment check-in
+            $symptoms = SymptomLog::where('user_id', $user->id)
+                ->where('source', 'moment_checkin')
+                ->whereBetween('occurred_at', [
+                    $momentCheckin->occurred_at->copy()->subSeconds(5),
+                    $momentCheckin->occurred_at->copy()->addSeconds(5),
+                ])
+                ->with('symptom')
+                ->get();
+
+            $events[] = [
+                'type' => 'moment_checkin',
+                'date' => $momentCheckin->occurred_at->format('Y-m-d'),
+                'time' => $momentCheckin->occurred_at,
+                'icon' => $momentCheckin->mood ?? '😐',
+                'color' => 'gray',
+                'title' => $momentCheckin->mood ?? 'Moment Check-in',
+                'message' => $momentCheckin->feeling_level
+                    ? "Cảm giác lúc {$momentCheckin->occurred_at->format('H:i')}: {$momentCheckin->feeling_level}/10{$tagsDisplay}"
+                    : $tagsDisplay,
+                'data' => $momentCheckin,
+                'symptoms' => $symptoms,
+            ];
+        }
+
+        // Get significant symptoms (severity >= 5 or critical)
+        $significantSymptoms = SymptomLog::where('user_id', $user->id)
+            ->where('occurred_at', '>=', $startDate)
+            ->where(function ($query) {
+                $query->where('severity', '>=', 5)
+                    ->orWhereHas('symptom', function ($q) {
+                        $q->where('is_critical', true);
+                    });
+            })
+            ->with('symptom')
+            ->orderBy('occurred_at', 'desc')
+            ->get()
+            ->unique(function ($log) {
+                return $log->symptom_code.'-'.$log->occurred_at->format('Y-m-d');
+            });
+
+        foreach ($significantSymptoms as $log) {
+            $events[] = [
+                'type' => 'symptom',
+                'date' => $log->occurred_at->format('Y-m-d'),
+                'time' => $log->occurred_at,
+                'icon' => $log->symptom->is_critical ?? false ? '🩹' : '🤧',
+                'color' => $log->severity >= 7 ? 'red' : ($log->severity >= 5 ? 'orange' : 'yellow'),
+                'title' => ($log->symptom->display_name ?? $log->symptom_code).': '.$log->severity.'/10',
+                'data' => $log,
+            ];
+        }
+
+        return $events;
+    }
+
+    /**
      * Get meaningful events only (last 7 days).
+     *
+     * @deprecated Use getStructuredDaysData instead
      */
     private function getMeaningfulEvents($user): array
     {
@@ -250,7 +424,7 @@ class TimelineController extends Controller
                 'color' => 'gray',
                 'title' => $momentCheckin->mood ?? 'Moment Check-in',
                 'message' => $momentCheckin->feeling_level
-                    ? "Feeling: {$momentCheckin->feeling_level}/10{$tagsDisplay}"
+                    ? "Cảm giác lúc {$momentCheckin->occurred_at->format('H:i')}: {$momentCheckin->feeling_level}/10{$tagsDisplay}"
                     : $tagsDisplay,
                 'data' => $momentCheckin,
                 'symptoms' => $symptoms,
@@ -301,6 +475,184 @@ class TimelineController extends Controller
         })->sortKeysDesc();
 
         return $grouped->values()->all();
+    }
+
+    /**
+     * Get daily summary for a specific date.
+     */
+    private function getDailySummary($user, Carbon $date): array
+    {
+        // Get trend comparison
+        $trend = $this->calculateDayTrend($user, $date);
+
+        // Get overall feeling (from DailyCheckin or average of MomentCheckins)
+        $dailyCheckin = DailyCheckin::where('user_id', $user->id)
+            ->where('checkin_date', $date)
+            ->first();
+
+        $overallFeeling = null;
+        if ($dailyCheckin && $dailyCheckin->overall_feeling) {
+            $overallFeeling = $dailyCheckin->overall_feeling;
+        } else {
+            // Fallback to average of moment check-ins
+            $momentCheckins = MomentCheckin::where('user_id', $user->id)
+                ->whereDate('occurred_at', $date)
+                ->whereNotNull('feeling_level')
+                ->get();
+
+            if ($momentCheckins->count() > 0) {
+                $overallFeeling = (int) round($momentCheckins->avg('feeling_level'));
+            }
+        }
+
+        // Get primary symptoms
+        $primarySymptoms = $this->getPrimarySymptoms($user, $date);
+
+        // Get alert count
+        $alertCount = Alert::where('user_id', $user->id)
+            ->whereDate('triggered_at', $date)
+            ->count();
+
+        return [
+            'trend' => $trend['direction'],
+            'trend_icon' => $trend['icon'],
+            'trend_label' => $trend['label'],
+            'overall_feeling' => $overallFeeling,
+            'primary_symptoms' => $primarySymptoms,
+            'alert_count' => $alertCount,
+            'day_name' => $date->locale('vi')->translatedFormat('l'),
+            'date_formatted' => $date->format('d/m/Y'),
+        ];
+    }
+
+    /**
+     * Calculate trend for a specific day compared to previous day.
+     */
+    private function calculateDayTrend($user, Carbon $date): array
+    {
+        $previousDate = $date->copy()->subDay();
+
+        // Calculate composite severity for today
+        $maxSeverityToday = SymptomLog::where('user_id', $user->id)
+            ->whereDate('occurred_at', $date)
+            ->max('severity') ?? 0;
+
+        $checkinToday = DailyCheckin::where('user_id', $user->id)
+            ->where('checkin_date', $date)
+            ->first();
+
+        $severityToday = $this->calculateCompositeSeverity($maxSeverityToday, $checkinToday);
+
+        // Calculate composite severity for yesterday
+        $maxSeverityYesterday = SymptomLog::where('user_id', $user->id)
+            ->whereDate('occurred_at', $previousDate)
+            ->max('severity') ?? 0;
+
+        $checkinYesterday = DailyCheckin::where('user_id', $user->id)
+            ->where('checkin_date', $previousDate)
+            ->first();
+
+        $severityYesterday = $this->calculateCompositeSeverity($maxSeverityYesterday, $checkinYesterday);
+
+        // If no previous day data, return stable
+        if ($severityYesterday === 5.0 && ! $checkinYesterday && $maxSeverityYesterday === 0) {
+            return [
+                'direction' => 'stable',
+                'icon' => '➖',
+                'label' => 'Ổn định',
+            ];
+        }
+
+        // Compare (lower severity = better)
+        $difference = $severityYesterday - $severityToday; // Positive = improving
+        $threshold = 0.5;
+
+        if ($difference > $threshold) {
+            return [
+                'direction' => 'improving',
+                'icon' => '⬆️',
+                'label' => 'Đang tốt lên',
+            ];
+        } elseif ($difference < -$threshold) {
+            return [
+                'direction' => 'worsening',
+                'icon' => '⬇️',
+                'label' => 'Hơi tệ hơn',
+            ];
+        }
+
+        return [
+            'direction' => 'stable',
+            'icon' => '➖',
+            'label' => 'Ổn định',
+        ];
+    }
+
+    /**
+     * Get primary symptoms for a specific date (top 2-3 by severity).
+     */
+    private function getPrimarySymptoms($user, Carbon $date): array
+    {
+        $symptomLogs = SymptomLog::where('user_id', $user->id)
+            ->whereDate('occurred_at', $date)
+            ->with('symptom')
+            ->get();
+
+        if ($symptomLogs->isEmpty()) {
+            return [];
+        }
+
+        // Calculate weighted severity (critical symptoms × 2)
+        $weightedLogs = $symptomLogs->map(function ($log) {
+            $weight = ($log->symptom->is_critical ?? false) ? 2.0 : 1.0;
+
+            return [
+                'log' => $log,
+                'weighted_severity' => $log->severity * $weight,
+            ];
+        })->sortByDesc('weighted_severity');
+
+        // Get top 2-3 symptoms
+        $topSymptoms = $weightedLogs->take(3)->map(function ($item) {
+            $log = $item['log'];
+
+            return [
+                'code' => $log->symptom_code,
+                'name' => $log->symptom->display_name ?? $log->symptom_code,
+                'severity' => $log->severity,
+                'is_critical' => $log->symptom->is_critical ?? false,
+            ];
+        })->values()->all();
+
+        return $topSymptoms;
+    }
+
+    /**
+     * Group moment check-ins with preview.
+     */
+    private function groupMomentCheckins(array $momentEvents): array
+    {
+        if (empty($momentEvents)) {
+            return [
+                'count' => 0,
+                'preview' => [],
+                'all' => [],
+            ];
+        }
+
+        // Sort by time (most recent first)
+        usort($momentEvents, function ($a, $b) {
+            return $b['time']->timestamp <=> $a['time']->timestamp;
+        });
+
+        // Preview is first 2-3 items
+        $preview = array_slice($momentEvents, 0, min(3, count($momentEvents)));
+
+        return [
+            'count' => count($momentEvents),
+            'preview' => $preview,
+            'all' => $momentEvents,
+        ];
     }
 
     private function getAlertIcon(string $severity): string
