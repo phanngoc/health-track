@@ -192,9 +192,10 @@ class TimelineController extends Controller
         }
 
         // Get check-ins with symptoms (meaningful)
+        // Order by created_at để hiển thị check-ins mới nhất (kể cả nhiều check-in cùng ngày)
         $checkins = DailyCheckin::where('user_id', $user->id)
             ->where('checkin_date', '>=', $startDate)
-            ->orderBy('checkin_date', 'desc')
+            ->orderBy('created_at', 'desc')
             ->get();
 
         foreach ($checkins as $checkin) {

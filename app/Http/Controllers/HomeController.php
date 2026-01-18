@@ -2,10 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Alert;
 use App\Models\DailyCheckin;
-use App\Models\SymptomLog;
-use App\Models\TimelineEvent;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 class HomeController extends Controller
@@ -14,24 +12,28 @@ class HomeController extends Controller
     {
         $user = Auth::user();
 
-        $stats = [
-            'total_checkins' => 0,
-            'total_symptoms' => 0,
-            'active_alerts' => 0,
-            'timeline_events' => 0,
-        ];
+        $hasTodayCheckin = false;
+        $recentCheckins = collect();
 
         if ($user) {
-            $stats['total_checkins'] = DailyCheckin::where('user_id', $user->id)->count();
-            $stats['total_symptoms'] = SymptomLog::where('user_id', $user->id)->count();
-            $stats['active_alerts'] = Alert::where('user_id', $user->id)
-                ->whereNull('acknowledged_at')
-                ->count();
-            $stats['timeline_events'] = TimelineEvent::where('user_id', $user->id)
-                ->where('occurred_at', '>=', now()->subDays(7))
-                ->count();
+            // Check if user has check-in today
+            $hasTodayCheckin = DailyCheckin::where('user_id', $user->id)
+                ->where('checkin_date', Carbon::today())
+                ->exists();
+
+            // Get recent check-ins (last 7 days, max 3 items)
+            // Order by created_at để hiển thị check-ins mới nhất (kể cả nhiều check-in cùng ngày)
+            $recentCheckins = DailyCheckin::where('user_id', $user->id)
+                ->where('checkin_date', '>=', Carbon::today()->subDays(7))
+                ->orderBy('created_at', 'desc')
+                ->limit(3)
+                ->get();
         }
 
-        return view('home', compact('stats'));
+        return view('home', [
+            'user' => $user,
+            'hasTodayCheckin' => $hasTodayCheckin,
+            'recentCheckins' => $recentCheckins,
+        ]);
     }
 }

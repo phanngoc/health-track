@@ -25,6 +25,7 @@ class SymptomSeeder extends Seeder
             ['code' => 'fatigue', 'display_name' => 'Mệt mỏi', 'severity_scale' => 10, 'is_critical' => false],
             ['code' => 'stomach_pain', 'display_name' => 'Đau bụng', 'severity_scale' => 10, 'is_critical' => false],
             ['code' => 'sore_throat', 'display_name' => 'Đau họng', 'severity_scale' => 10, 'is_critical' => false],
+            ['code' => 'general_wellbeing', 'display_name' => 'Tình trạng sức khỏe tổng thể', 'severity_scale' => 10, 'is_critical' => false],
         ];
 
         foreach ($symptoms as $symptom) {

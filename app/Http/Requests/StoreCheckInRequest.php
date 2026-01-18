@@ -23,6 +23,9 @@ class StoreCheckInRequest extends FormRequest
     {
         return [
             'checkin_date' => ['sometimes', 'date'],
+            'mood' => ['nullable', 'string', 'in:🙂,😐,😴,😣,😄'],
+            'tags' => ['nullable', 'array', 'max:2'],
+            'tags.*' => ['string', 'in:🏃‍♂️,🍺,😴,💼,🤒,❤️'],
             'overall_feeling' => ['nullable', 'integer', 'min:1', 'max:10'],
             'sleep_hours' => ['nullable', 'numeric', 'min:0', 'max:24'],
             'notes' => ['nullable', 'string', 'max:1000'],

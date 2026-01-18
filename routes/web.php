@@ -22,6 +22,7 @@ Route::middleware('auth')->group(function () {
     Route::get('/checkins', [\App\Http\Controllers\CheckInController::class, 'index'])->name('checkins.index');
     Route::get('/checkins/create', [\App\Http\Controllers\CheckInController::class, 'create'])->name('checkins.create');
     Route::post('/checkins', [\App\Http\Controllers\CheckInController::class, 'store'])->name('checkins.store');
+    Route::post('/checkins/quick', [\App\Http\Controllers\CheckInController::class, 'quickCheckIn'])->name('checkins.quick');
 
     // Timeline route
     Route::get('/timeline', [\App\Http\Controllers\TimelineController::class, 'index'])->name('timeline.index');

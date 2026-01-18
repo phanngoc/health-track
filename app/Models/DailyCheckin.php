@@ -12,6 +12,8 @@ class DailyCheckin extends Model
     protected $fillable = [
         'user_id',
         'checkin_date',
+        'mood',
+        'tags',
         'overall_feeling',
         'sleep_hours',
         'notes',
@@ -21,6 +23,7 @@ class DailyCheckin extends Model
     {
         return [
             'checkin_date' => 'date',
+            'tags' => 'array',
             'overall_feeling' => 'integer',
             'sleep_hours' => 'float',
         ];
